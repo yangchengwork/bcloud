@@ -21,6 +21,7 @@ class VCodeDialog(Gtk.Dialog):
             (Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
             Gtk.STOCK_OK, Gtk.ResponseType.OK))
 
+        self.set_default_response(Gtk.ResponseType.OK)
         self.set_default_size(320, 200)
         self.set_border_width(10)
         self.app = app
@@ -36,6 +37,9 @@ class VCodeDialog(Gtk.Dialog):
         box.pack_start(self.img, False, False, 0)
 
         self.entry = Gtk.Entry()
+        self.entry.connect(
+                'activate',
+                lambda *args: self.response(Gtk.ResponseType.OK))
         box.pack_start(self.entry, False, False, 0)
 
         box.show_all()
@@ -46,7 +50,6 @@ class VCodeDialog(Gtk.Dialog):
     def update_img(self, request, error=None):
         if error or not request:
             # TODO: add a refresh button
-            print('failed to get vcode image')
             return
         vcode_path = os.path.join(
                 Config.get_tmp_path(self.app.profile['username']),

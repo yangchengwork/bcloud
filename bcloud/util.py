@@ -3,11 +3,18 @@
 # Use of this source code is governed by GPLv3 license that can be found
 # in http://www.gnu.org/licenses/gpl-3.0.html
 
+import base64
 import datetime
 import hashlib
 import os
 import random
+import re
+import urllib.parse
 import time
+
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+#from Crypto.Cipher import PKCS1_v1_5
 
 SIZE_K = 2 ** 10
 SIZE_M = 2 ** 20
@@ -39,7 +46,13 @@ def rec_split_path(path):
     result.reverse()
     return result
 
-def get_human_size(size):
+def get_human_size(size, use_giga=True):
+    '''将文件大小由byte, 转为人类可读的字符串
+    size     -  整数, 文件的大小, 以byte为单位
+    use_giga - 如果这个选项为False, 那最大的单位就是MegaBytes, 而不会用到
+               GigaBytes, 这个在显示下载进度时很有用, 因为可以动态的显示下载
+               状态.
+    '''
 
     '''将文件大小转为人类可读的形式'''
     size_kb = '{0:,}'.format(size)
@@ -47,7 +60,7 @@ def get_human_size(size):
         return ('{0} B'.format(size), size_kb)
     if size < SIZE_M:
         return ('{0:.1f} kB'.format(size / SIZE_K), size_kb)
-    if size < SIZE_G:
+    if size < SIZE_G or not use_giga:
         return ('{0:.1f} MB'.format(size / SIZE_M), size_kb)
     if size < SIZE_T:
         return ('{0:.1f} GB'.format(size / SIZE_G), size_kb)
@@ -71,3 +84,41 @@ def list_remove_by_index(l, index):
         l = l[0:index] + l[index+1:]
 
     return l
+
+def uri_to_path(uri):
+    if not uri or len(uri) < 7:
+        return ''
+    return urllib.parse.unquote(uri).replace('file://', '')
+
+def uris_to_paths(uris):
+    '''将一串URI地址转为绝对路径, 用于处理桌面程序中的文件拖放'''
+    source_paths = []
+    for uri in uris.split('\n'):
+        source_path = uri_to_path(uri)
+        if source_path:
+            source_paths.append(source_path)
+    return source_paths
+
+def natsort(string):
+    '''按照语言里的意义对字符串进行排序.
+
+    这个方法用于替换按照字符编码顺序对字符串进行排序.
+    相关链接:
+    http://stackoverflow.com/questions/2545532/python-analog-of-natsort-function-sort-a-list-using-a-natural-order-algorithm
+    http://www.codinghorror.com/blog/2007/12/sorting-for-humans-natural-sort-order.html
+    '''
+    return [int(s) if s.isdigit() else s for s in re.split('(\d+)', string)]
+
+
+def RSA_encrypt(public_key, message):
+    '''用RSA加密字符串.
+
+    public_key - 公钥
+    message    - 要加密的信息, 使用UTF-8编码的字符串
+    @return 使用base64编码的字符串
+    '''
+    rsakey = RSA.importKey(public_key)
+    rsakey = PKCS1_OAEP.new(rsakey)
+    #rsakey = PKCS1_v1_5.new(rsakey)
+    encrypted = rsakey.encrypt(message.encode())
+    return base64.encodestring(encrypted).decode()

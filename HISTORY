@@ -1,3 +1,136 @@
+v3.3.7 - 2014.5.29
+* Increase downloading chunk size
+* Check local file size
+* FIxed: local file is removed after downloading
+* Fixed: TypeError: 'pixbuf' object does not support indexing
+* Fixed: error occurs when adding multiple cloud tasks
+* Fixed: catch binascii.Error: Incorrect padding exception
+* Discard auth cache if current user password is modified
+
+v3.3.6 - 2014.5.15
+* Support RSA encryption
+* Show MegaBytes in DownloadPage
+* Add dark-theme switch
+* Fixed: dlink not in pcs_file
+* Fixed: tooltip of filelist in CloudPage error
+* i18n updated
+
+v3.3.5 - 2014.5.8
+* Handle cloud error code
+* Control buttons are redesigned
+* Fixed: TypeError: load() takes 2 positional argumenst but 3 were given; found by @ly0
+* Fixed: AttributeError: 'IconWindow' object has no attribute 'filelist'
+* Support downloading multiple cloud tasks; adviced by @nanpuyue
+* Using local auth cache only if this account is allowed to signin automatically.
+* Add reload button to FolderBrowserDialog
+* i18n updated
+
+v3.3.4 - 2014.5.1
+* Fixed: 'uploadPage' object has no attribute 'reload'
+* Fixed: escape special HTML chars in password; reported by @zhoujy
+* pypy -> bypy; reported by @hot123tea123
+* Set Uploader/Downloader as daemon
+* Support uploading hidden files option
+* Fixed: loading UNKNOWN icon
+* Fixed: check image is intact before loading
+* Fixed: check themed icon is not None; reported by @fclucky777
+* Add loading spin to TrashPage and CloudPage
+* Delete outdated information
+* Set background thread as Daemon
+* Split a large file(512M~10G) to 1000 pieces
+* i18n updated
+
+v3.3.3 - 2014.4.17
+* Call App.quit explicitly
+* Fixed: VCodeDialog response type error
+* Fixed: FS_ID not match in Downloader
+* Fixed: DownloadPage has no attribute `toast`
+* Fixed: Information in properties dialog does not match with its contents
+* Fixed: Check meta status before downloading
+* Add loading spinner to pages
+* Add similar projects
+* Scan downloading tasks in the last process
+* i18n updated
+
+v3.3.2 - 2014.4.15
+* Rewrite Downloader to accelerate downloading speed
+* Fixed: check row is not None
+* Show downloading speed
+
+v3.3.1 - 2014.4.15
+* Remove all debug info
+* Explicitly destroy DownloadPage and UploadPage
+* Fixed: status icon disappears after preferences dialog destroyed
+* Automatically adjust uploading slice size based on file size
+* Uploading slice size option removed from Preferences dialog
+* Fixed: Saving uploading/downloading status of current user before loggint out
+* Fixed: Check video streaming status before loading with player
+* Fixed: NameError global name `dbus` is not defined
+* Store downloading status to database
+* Automatically migrate tasks to new tables
+
+v3.2.1 - 2014.4.14
+* Fixed: catch dbus.exception.DBusExceptions when query user password from keyring
+* Automatically flush to disk when downloading files
+* Support sorting and DnD
+* Show error message in CloudPage
+* Fixed: show vcode dialog in cloud_add_link_task()
+* Support natural sorting
+* Fixed: automatically reload CloudPage after a task is added
+* Add List View
+* Add tooltips
+* Specify default button in dialogs
+* More symbolic icons added
+* i18n updated
+
+v3.1.3 - 2014.4.12
+* Support Streaming mode, making it faster to open video files
+* i18n updated
+
+v3.1.2 - 2014.4.11
+* Fixed: seek file to last position before resuming uploading
+* Add `Pause Downloading/Uploading Tasks` menu item
+* Support Traditional Chinese(zh_TW)
+
+v3.1.1 - 2014.4.10
+* Fixed: switch to home page when a new account signed in
+* Fixed: IndexError: could not find tree path
+* Fixed: KeyError: 'upload-threshold'
+* Fixed: Unable to convert from gint to glong; reported by @bcsflilong
+* Set `notify` and `keyring` modules as essential
+* Support slice uploading
+* Support downloading/uploading folders
+* Fixed: unescape uri; reported by @eexpress
+* Add 15px to left margin of nav window
+* Support folder properties
+* Support sorting and DnD in DownloadPage/UploadPage
+* Drop file to application window to upload
+* Enable local authorization cache
+* Support pause/remove uploading tasks
+* Dump downloading task first
+
+v2.2.5 - 2014.4.6
+* Fixed: save download status while destroying main window
+* Fixed: gettext is overrided to string
+* SharePage/InBoxPage removed
+* Wrapping path box with a ScrolledWindow
+* Add a Create Foldr button to Folder Browser Dialog
+* Automatically load next page when scrolling down to bottom of window
+* Support new type of signin verification code
+* AppChooserDilalog added
+* i18n updated
+
+v2.2.4 - 2014.4.4
+* Fixed: check tree path exists before updating liststore
+* Support opensuse 13
+* Support ubuntu 12.04
+* Wrapping grid with a scrolled window
+* Fixed: save profile after it is modified
+* Fixed: show preferences dialog only if someone has logged in
+* Automatically dump download tasks in background
+* Fixed: AttributeError: 'FileIcon' object has no attribute 'get_names'; reported by @ahwad
+* unknown.png added
+
 v2.2.3 - 2014.3.26
 * Fixed: saving download status when terminated
 * Automatically update user profile

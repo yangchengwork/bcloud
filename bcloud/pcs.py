@@ -9,6 +9,7 @@
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -39,22 +40,65 @@ def get_quota(cookie, tokens):
     else:
         return None
 
-def list_share(cookie, tokens, path='/', page=1, num=100):
-    '''获取用户已经共享的文件的信息
 
-    path - 哪个目录的信息, 默认为根目录.
+def get_user_uk(cookie, tokens):
+    '''获取用户的uk'''
+    url = 'http://yun.baidu.com'
+    req = net.urlopen(url, headers={'Cookie': cookie.header_output()})
+    if req:
+        content = req.data.decode()
+        match = re.findall('/share/home\?uk=(\d+)" target=', content)
+        if len(match) == 1:
+            return match[0]
+    return None
+
+def list_share(cookie, tokens, uk, page=1):
+    '''获取用户已经共享的所有文件的信息
+
+    uk   - user key
     page - 页数, 默认为第一页.
-    num - 一次性获取的共享文件的数量, 默认为100个.
+    num  - 一次性获取的共享文件的数量, 默认为100个.
+    '''
+    num = 100
+    start = 100 * (page - 1)
+    url = ''.join([
+        const.PAN_URL,
+        'pcloud/feed/getsharelist?',
+        '&t=', util.timestamp(),
+        '&categor=0&auth_type=1&request_location=share_home',
+        '&start=', str(start),
+        '&limit=', str(num),
+        '&query_uk=', str(uk),
+        '&channel=chunlei&clienttype=0&web=1',
+        '&bdstoken=', tokens['bdstoken'],
+        ])
+    req = net.urlopen(url, headers={
+        'Cookie': cookie.header_output(),
+        'Referer': const.SHARE_REFERER,
+        })
+    if req:
+        content = req.data
+        return json.loads(content.decode())
+    else:
+        return None
+
+def list_share_path(cookie, tokens, uk, path, share_id, page):
+    '''列举出用户共享的某一个目录中的文件信息
+
+    uk       - user key
+    path     - 共享目录
+    share_id - 共享文件的ID值
     '''
     url = ''.join([
         const.PAN_URL,
-        'share/record?channel=chunlei&clienttype=0&web=1',
-        '&num=', str(num),
+        'share/list?channel=chunlei&clienttype=0&web=1&num=100',
         '&t=', util.timestamp(),
         '&page=', str(page),
         '&dir=', encoder.encode_uri_component(path),
-        '&t=', util.latency(), 
-        '&order=tme&desc=1',
+        '&t=', util.latency(),
+        '&shareid=', share_id,
+        '&order=time&desc=1',
+        '&uk=', uk,
         '&_=', util.timestamp(),
         '&bdstoken=', tokens['bdstoken'],
         ])
@@ -68,12 +112,42 @@ def list_share(cookie, tokens, path='/', page=1, num=100):
     else:
         return None
 
+def get_share_page(url):
+    '''获取共享页面的文件信息'''
+    req = net.urlopen(url)
+    if req:
+        content = req.data.decode()
+        match = re.findall('applicationConfig,(.+)\]\);', content)
+        share_files = {}
+        if not match:
+            match = re.findall('viewShareData=(.+");FileUtils.spublic', content)
+            if not match:
+                return None
+            list_ = json.loads(json.loads(match[0]))
+        else:
+            list_ = json.loads(json.loads(match[0]))
+        if isinstance(list_, dict):
+            share_files['list'] = [list_, ]
+        else:
+            share_files['list'] = list_
+        id_match = re.findall('FileUtils\.share_id="(\d+)"', content)
+        uk_match = re.findall('/share/home\?uk=(\d+)" target=', content)
+        sign_match = re.findall('FileUtils\.share_sign="([^"]+)"', content)
+        if id_match and uk_match and sign_match:
+            share_files['share_id'] = id_match[0]
+            share_files['uk'] = uk_match[0]
+            share_files['sign'] = sign_match[0]
+            return share_files
+    return None
+
 def enable_share(cookie, tokens, fid_list):
     '''建立新的分享.
 
     fid_list - 是一个list, 里面的每一条都是一个文件的fs_id
-
-    @return - 会返回每一项的分享链接和shareid.
+    一次可以分享同一个目录下的多个文件/目录, 它们会会打包为一个分享链接,
+    这个分享链接还有一个对应的shareid. 我们可以用uk与shareid来在百度网盘里
+    面定位到这个分享内容.
+    @return - 会返回分享链接和shareid.
     '''
     url = ''.join([
         const.PAN_URL,
@@ -162,7 +236,7 @@ def list_trash(cookie, tokens, path='/', page=1, num=100):
 def restore_trash(cookie, tokens, fidlist):
     '''从回收站中还原文件/目录.
 
-    fildlist - 要还要的文件/目录列表, fs_id.
+    fildlist - 要还原的文件/目录列表, fs_id.
     '''
     url = ''.join([
         const.PAN_API_URL,
@@ -222,9 +296,21 @@ def clear_trash(cookie, tokens):
     else:
         return None
 
+def list_dir_all(cookie, tokens, path):
+    '''得到一个目录中所有文件的信息, 并返回它的文件列表'''
+    pcs_files = []
+    page = 1
+    while True:
+        content = list_dir(cookie, tokens, path, page)
+        if not content:
+            return (path, None)
+        if not content['list']:
+            return (path, pcs_files)
+        pcs_files.extend(content['list'])
+        page = page + 1
 
 def list_dir(cookie, tokens, path, page=1, num=100):
-    '''得到一个目录中的所有文件的信息.'''
+    '''得到一个目录中的所有文件的信息(最多100条记录).'''
     timestamp = util.timestamp()
     url = ''.join([
         const.PAN_API_URL,
@@ -399,18 +485,19 @@ def get_category(cookie, tokens, category, page=1):
     else:
         return None
 
-def get_download_link(cookie, dlink):
-    '''在下载之前, 要先获取最终的下载链接, 因为中间要进行一次302跳转.
+def get_download_link(cookie, tokens, path):
+    '''在下载之前, 要先获取最终的下载链接.
 
-    这一步是为了得到最终的下载地址. 如果得不到最终的下载地址, 那下载速度就
-    会受到很大的限制.
+    path - 一个文件的绝对路径.
 
-    dlink - 在pcs_file里面的dlink项, 这个链接是一个临时下载链接.
-
-    @return (red_url, request_id), red_url 是重定向后的URL, 如果获取失败,
-            就返回原来的dlink; request_id 是一个字符串, 用于下载文件时的认
-            证, 如果获取失败, 它的值就为空.
+    @return red_url, red_url 是重定向后的URL, 如果获取失败,
+            就返回原来的dlink;
     '''
+    metas = get_metas(cookie, tokens, path)
+    if (not metas or metas.get('errno', 1) != 0 or
+            'info' not in metas or len(metas['info']) != 1):
+        return None
+    dlink = metas['info'][0]['dlink']
     url = ''.join([
         dlink,
         '&cflg=', cookie.get('cflag').value
@@ -420,29 +507,48 @@ def get_download_link(cookie, dlink):
             'Accept': const.ACCEPT_HTML,
             })
     if not req:
-        return (url, '')
-    red_url = req.getheader('Location', url)
-    req_id = req.getheader('x-pcs-request-id', '')
-    return (red_url, req_id)
+        return url
+    else:
+        return req.getheader('Location', url)
 
-#def download(cookie, url, targ_path, range_=None):
-#    '''以普通方式下载文件.
-#
-#    如果指定range的话, 可以下载指定的数据段.
-#    pcs_file - 文件的详细信息.
-#    targ_path - 保存文件的目标路径
-#    range_ - 要下载的数据范围, 利用这个可以实现断点续传; 如果不指定它,
-#             就会一次性下载文件的全部内容(在pcs_file中有文件的大小信息).
-#
-#    @return 
-#    '''
-#    headers = {'Cookie': cookie.header_output()}
-#    if range_:
-#        headers['Range'] = range_
-#    req = net.urlopen(url, headers=headers)
-#    content = req.data
-#    with open(targ_path, 'wb') as fh:
-#        fh.write(content)
+def stream_download(cookie, tokens, path):
+    '''下载流媒体文件.
+
+    path - 流文件的绝对路径.
+    '''
+    url = ''.join([
+        const.PCS_URL_D,
+        'file?method=download',
+        '&path=', encoder.encode_uri_component(path),
+        '&app_id=250528',
+        ])
+    req = net.urlopen_without_redirect(
+            url, headers={'Cookie': cookie.header_output()})
+    if req:
+        return req
+    else:
+        return None
+
+def get_streaming_playlist(cookie, path, video_type='M3U8_AUTO_480'):
+    '''获取流媒体(通常是视频)的播放列表.
+
+    默认得到的是m3u8格式的播放列表, 因为它最通用.
+    path       - 视频的绝对路径
+    video_type - 视频格式, 可以根据网速及片源, 选择不同的格式.
+    '''
+    url = ''.join([
+        const.PCS_URL,
+        'file?method=streaming',
+        '&path=', encoder.encode_uri_component(path),
+        '&type=', video_type,
+        '&app_id=250528',
+        ])
+    req = net.urlopen(url, headers={'Cookie': cookie.header_output()})
+    if req:
+        return req.data
+    else:
+        return None
+
 
 def upload_option(cookie, path):
     '''上传之前的检查.
@@ -463,16 +569,19 @@ def upload_option(cookie, path):
     else:
         return None
 
-def upload(cookie, source_path, path):
+def upload(cookie, source_path, path, ondup='overwrite'):
     '''上传一个文件.
 
     这个是使用的网页中的上传接口.
+    ondup - 如果文件已在服务器上存在, 该如何操作. 有两个选项:
+            overwrite, 直接将其重写.
+            newcopy, 保留原先的文件, 并在新上传的文件名尾部加上当前时间戳.
     '''
     dir_name, file_name = os.path.split(path)
     url = ''.join([
         const.PCS_URL_C,
         'file?method=upload&app_id=250528',
-        '&ondup=newcopy',
+        '&ondup=', ondup,
         '&dir=', encoder.encode_uri_component(dir_name),
         '&filename=', encoder.encode_uri_component(file_name),
         '&', cookie.sub_output('BDUSS'),
@@ -494,6 +603,7 @@ def upload(cookie, source_path, path):
         return None
 
 def rapid_upload(cookie, tokens, source_path, path):
+    '''快速上传'''
     content_length = os.path.getsize(source_path)
     assert content_length > RAPIDUPLOAD_THRESHOLD, 'file size is not satisfied!'
     dir_name, file_name = os.path.split(path)
@@ -520,12 +630,63 @@ def rapid_upload(cookie, tokens, source_path, path):
     else:
         return None
 
+def slice_upload(cookie, data):
+    '''分片上传一个大文件
+    
+    分片上传完成后, 会返回这个分片的MD5, 用于最终的文件合并.
+    如果上传失败, 需要重新上传.
+    不需要指定上传路径, 上传后的数据会被存储在服务器的临时目录里.
+    data - 这个文件分片的数据.
+    '''
+    url = ''.join([
+        const.PCS_URL_C,
+        'file?method=upload&type=tmpfile&app_id=250528',
+        '&', cookie.sub_output('BDUSS'),
+        ])
+    fields = []
+    files = [
+        ('file', ' ', data),
+        ]
+    headers = {
+        'Accept': const.ACCEPT_HTML,
+        'Origin': const.PAN_URL,
+        }
+    req = net.post_multipart(url, headers, fields, files)
+    if req:
+        return json.loads(req.data.decode())
+    else:
+        return None
 
-def get_metas(cookie, tokens, filelist):
-    '''获取文件的metadata.
+def create_superfile(cookie, path, block_list):
+    '''合并slice_upload()中产生的临时文件
+
+    path       - 文件在服务器上的绝对路径
+    block_list - 这些文件分片的MD5列表
+    返回完整的文件pcs信息.
+    '''
+    url = ''.join([
+        const.PCS_URL_C,
+        'file?method=createsuperfile&app_id=250528',
+        '&path=', encoder.encode_uri_component(path),
+        '&', cookie.sub_output('BDUSS'),
+        ])
+    param = {'block_list': block_list}
+    data = 'param=' + json.dumps(param)
+    req = net.urlopen(url, headers={
+        'Cookie': cookie.header_output(),
+        }, data=data.encode())
+    if req:
+        return json.loads(req.data.decode())
+    else:
+        return None
+
+
+def get_metas(cookie, tokens, filelist, dlink=True):
+    '''获取多个文件的metadata.
 
     filelist - 一个list, 里面是每个文件的绝对路径.
                也可以是一个字符串, 只包含一个文件的绝对路径.
+    dlink    - 是否包含下载链接, 默认为True, 包含.
 
     @return 包含了文件的下载链接dlink, 通过它可以得到最终的下载链接.
     '''
@@ -536,7 +697,12 @@ def get_metas(cookie, tokens, filelist):
         'filemetas?channel=chunlei&clienttype=0&web=1',
         '&bdstoken=', tokens['bdstoken'],
         ])
-    data = 'dlink=1&target=' + encoder.encode_uri_component(json.dumps(filelist))
+    if dlink:
+        data = ('dlink=1&target=' +
+                encoder.encode_uri_component(json.dumps(filelist)))
+    else:
+        data = ('dlink=0&target=' +
+                encoder.encode_uri_component(json.dumps(filelist)))
     req = net.urlopen(url, headers={
         'Cookie': cookie.sub_output('BDUSS'),
         'Content-type': const.CONTENT_FORM,
@@ -569,7 +735,8 @@ def search(cookie, tokens, key, path='/'):
     else:
         return None
 
-def cloud_add_link_task(cookie, tokens, source_url, save_path):
+def cloud_add_link_task(cookie, tokens, source_url, save_path,
+                        vcode='', vcode_input=''):
     '''新建离线下载任务.
     
     source_url - 可以是http/https/ftp等一般的链接
@@ -586,12 +753,18 @@ def cloud_add_link_task(cookie, tokens, source_url, save_path):
         type_ = '&type=3'
     if not save_path.endswith('/'):
         save_path = save_path + '/'
-    data = ''.join([
+    data = [
         'method=add_task&app_id=250528',
         '&source_url=', encoder.encode_uri_component(source_url),
         '&save_path=', encoder.encode_uri_component(save_path),
         '&type=', type_,
-        ])
+        ]
+    if vcode:
+        data.append('&input=')
+        data.append(vcode_input)
+        data.append('&vcode=')
+        data.append(vcode)
+    data = ''.join(data)
     req = net.urlopen(url, headers={
         'Cookie': cookie.header_output(),
         }, data=data.encode())
@@ -601,8 +774,8 @@ def cloud_add_link_task(cookie, tokens, source_url, save_path):
     else:
         return None
 
-def cloud_add_bt_task(cookie, tokens, source_url, save_path,
-                    selected_idx, file_sha1='', vcode='', vcode_input=''):
+def cloud_add_bt_task(cookie, tokens, source_url, save_path, selected_idx,
+                      file_sha1='', vcode='', vcode_input=''):
     '''新建一个BT类的离线下载任务, 包括magent磁链.
 
     source_path  - BT种子所在的绝对路径

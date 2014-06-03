@@ -42,7 +42,7 @@ def urloption(url, headers={}, retries=RETRIES):
             resp = conn.getresponse()
             return resp
         except OSError as e:
-            print('Error in net.urloption:', e, ', with url:', url)
+            print(e)
     return None
 
 
@@ -82,7 +82,7 @@ def urlopen(url, headers={}, data=None, retries=RETRIES):
                 req.data = zlib.decompress(req.data, -zlib.MAX_WBITS)
             return req
         except OSError as e:
-            print('Error in net.urlopen :', e, ', with url:', url)
+            print(e)
     return None
 
 def urlopen_without_redirect(url, headers={}, data=None, retries=RETRIES):
@@ -130,7 +130,7 @@ def post_multipart(url, headers, fields, files, retries=RETRIES):
                 req.data = zlib.decompress(req.data, -zlib.MAX_WBITS)
             return req
         except OSError as e:
-            print('Error: net.post_multipart ', e, ', with url:', url)
+            print(e)
     return None
 
 def encode_multipart_formdata(fields, files):

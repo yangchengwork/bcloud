@@ -13,6 +13,7 @@ from gi.repository import Gio
 from gi.repository import GLib
 from gi.repository import GObject
 from gi.repository import Gtk
+from gi.repository import Notify
 
 import Config
 Config.check_first()
@@ -26,9 +27,7 @@ from CategoryPage import *
 from CloudPage import CloudPage
 from DownloadPage import DownloadPage
 from HomePage import HomePage
-from InboxPage import InboxPage
 from PreferencesDialog import PreferencesDialog
-from SharePage import SharePage
 from SigninDialog import SigninDialog
 from TrashPage import TrashPage
 from UploadPage import UploadPage
@@ -39,12 +38,15 @@ if Gtk.MAJOR_VERSION <= 3 and Gtk.MINOR_VERSION < 10:
 BLINK_DELTA = 250    # 字体闪烁间隔, 250 miliseconds 
 BLINK_SUSTAINED = 3  # 字体闪烁持续时间, 5 seconds
 
+
 class App:
 
     profile = None
     cookie = None
     tokens = None
-    default_color = Gdk.RGBA(0.9, 0.9, 0.9, 1)
+    default_dark_color = Gdk.RGBA(0.9, 0.9, 0.9, 1)
+    default_light_color = Gdk.RGBA(0.1, 0.1, 0.1, 1)
+    default_color = default_dark_color
     status_icon = None
 
     def __init__(self):
@@ -58,8 +60,7 @@ class App:
         #self.icon_theme.append_search_path(Config.ICON_PATH)
         self.mime = MimeProvider(self)
         self.color_schema = Config.load_color_schema()
-        settings = Gtk.Settings.get_default()
-        settings.props.gtk_application_prefer_dark_theme = True
+        self.set_dark_theme(True)
 
         self.window = Gtk.ApplicationWindow.new(application=app)
         self.window.set_default_size(*gutil.DEFAULT_PROFILE['window-size'])
@@ -70,6 +71,16 @@ class App:
         self.window.connect('delete-event', self.on_main_window_deleted)
         app.add_window(self.window)
 
+        # set drop action
+        targets = [
+            ['text/plain', Gtk.TargetFlags.OTHER_APP, 0],
+            ['*.*', Gtk.TargetFlags.OTHER_APP, 1]]
+        target_list =[Gtk.TargetEntry.new(*t) for t in targets]
+        self.window.drag_dest_set(
+            Gtk.DestDefaults.ALL, target_list, Gdk.DragAction.COPY)
+        self.window.connect(
+            'drag-data-received', self.on_main_window_drag_data_received)
+
         app_menu = Gio.Menu.new()
         app_menu.append(_('Preferences'), 'app.preferences')
         app_menu.append(_('Sign out'), 'app.signout')
@@ -79,7 +90,7 @@ class App:
 
         preferences_action = Gio.SimpleAction.new('preferences', None)
         preferences_action.connect(
-                'activate', self.on_preferences_action_activated)
+            'activate', self.on_preferences_action_activated)
         app.add_action(preferences_action)
         signout_action = Gio.SimpleAction.new('signout', None)
         signout_action.connect('activate', self.on_signout_action_activated)
@@ -92,14 +103,16 @@ class App:
         app.add_action(quit_action)
 
         paned = Gtk.Paned()
+        #paned.props.position = 15
         self.window.add(paned)
 
         left_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         paned.add1(left_box)
+        paned.child_set_property(left_box, 'shrink', False)
+        paned.child_set_property(left_box, 'resize', False)
 
         nav_window = Gtk.ScrolledWindow()
         nav_window.props.hscrollbar_policy = Gtk.PolicyType.NEVER
-        #nav_window.props.border_width = 5
         left_box.pack_start(nav_window, True, True, 0)
 
         # icon_name, disname, tooltip, color
@@ -109,20 +122,14 @@ class App:
         nav_treeview.props.headers_visible = False
         nav_treeview.set_tooltip_column(TOOLTIP_COL)
         icon_cell = Gtk.CellRendererPixbuf()
+        icon_cell.props.xalign = 1
+        icon_col = Gtk.TreeViewColumn('Icon', icon_cell, icon_name=ICON_COL)
+        icon_col.props.fixed_width = 40
+        nav_treeview.append_column(icon_col)
         name_cell = Gtk.CellRendererText()
-        nav_col = Gtk.TreeViewColumn.new()
-        nav_col.set_title('Places')
-        nav_col.pack_start(icon_cell, False)
-        nav_col.pack_start(name_cell, True)
-        if Config.GTK_LE_36:
-            nav_col.add_attribute(icon_cell, 'icon_name', ICON_COL)
-            nav_col.add_attribute(name_cell, 'text', NAME_COL)
-            nav_col.add_attribute(name_cell, 'foreground_rgba', COLOR_COL)
-        else:
-            nav_col.set_attributes(icon_cell, icon_name=ICON_COL)
-            nav_col.set_attributes(
-                name_cell, text=NAME_COL, foreground_rgba=COLOR_COL)
-        nav_treeview.append_column(nav_col)
+        name_col = Gtk.TreeViewColumn(
+                'Places', name_cell, text=NAME_COL, foreground_rgba=COLOR_COL)
+        nav_treeview.append_column(name_col)
         nav_selection = nav_treeview.get_selection()
         nav_selection.connect('changed', self.on_nav_selection_changed)
         nav_window.add(nav_treeview)
@@ -144,13 +151,25 @@ class App:
     def on_app_shutdown(self, app):
         '''Dump profile content to disk'''
         if self.profile:
-            gutil.dump_profile(self.profile)
+            self.upload_page.on_destroy()
+            self.download_page.on_destroy()
 
     def run(self, argv):
         self.app.run(argv)
 
     def quit(self):
         self.app.quit()
+
+    def set_dark_theme(self, status):
+        settings = Gtk.Settings.get_default()
+        settings.props.gtk_application_prefer_dark_theme = status
+        if status:
+            self.default_color = self.default_dark_color
+        else:
+            self.default_color = self.default_light_color
+        if self.profile:
+            for row in self.nav_liststore:
+                row[3] = self.default_color
 
     def show_signin_dialog(self, auto_signin=True):
         self.profile = None
@@ -162,6 +181,8 @@ class App:
             self.init_notebook()
             self.notebook.connect('switch-page', self.on_notebook_switched)
             self.init_status_icon()
+            self.init_notify()
+            self.set_dark_theme(self.profile['use-dark-theme'])
 
             if self.profile['first-run']:
                 self.profile['first-run'] = False
@@ -171,6 +192,7 @@ class App:
                 gutil.dump_profile(self.profile)
 
             self.home_page.load()
+            self.switch_page(self.home_page)
             return
         self.quit()
 
@@ -181,9 +203,16 @@ class App:
     def on_main_window_deleted(self, window, event):
         if self.profile and self.profile['use-status-icon']:
             window.hide()
-            return True
         else:
-            return False
+            self.quit()
+        return True
+
+    def on_main_window_drag_data_received(self, window, drag_context, x, y,
+                                          data, info, time):
+        uris = data.get_text()
+        source_paths = util.uris_to_paths(uris)
+        if source_paths and self.profile:
+            self.upload_page.add_file_tasks(source_paths)
 
     def on_preferences_action_activated(self, action, params):
         if self.profile:
@@ -192,11 +221,15 @@ class App:
             dialog.destroy()
             if self.profile:
                 gutil.dump_profile(self.profile)
-                if self.profile['use-status-icon']:
+                if self.profile['use-status-icon'] and not self.status_icon:
                     self.init_status_icon()
+                self.set_dark_theme(self.profile['use-dark-theme'])
 
     def on_signout_action_activated(self, action, params):
+        '''在退出登录前, 应该保存当前用户的所有数据'''
         if self.profile:
+            self.upload_page.pause_tasks()
+            self.download_page.pause_tasks()
             self.show_signin_dialog(auto_signin=False)
 
     def on_about_action_activated(self, action, params):
@@ -223,8 +256,8 @@ class App:
             return
         used = quota_info['used']
         total = quota_info['total']
-        used_size, _ = util.get_human_size(used)
-        total_size, _ = util.get_human_size(total)
+        used_size = util.get_human_size(used)[0]
+        total_size = util.get_human_size(total)[0]
         self.progressbar.set_text(used_size + ' / ' + total_size)
         self.progressbar.set_fraction(used / total)
 
@@ -256,10 +289,6 @@ class App:
         append_page(self.music_page)
         self.other_page = OtherPage(self)
         append_page(self.other_page)
-        self.share_page = SharePage(self)
-        append_page(self.share_page)
-        self.inbox_page = InboxPage(self)
-        append_page(self.inbox_page)
         self.trash_page = TrashPage(self)
         append_page(self.trash_page)
         self.cloud_page = CloudPage(self)
@@ -332,6 +361,21 @@ class App:
         sep_item = Gtk.SeparatorMenuItem()
         menu.append(sep_item)
 
+        pause_upload_item = Gtk.MenuItem.new_with_label(
+                _('Pause Uploading Tasks'))
+        pause_upload_item.connect(
+                'activate', lambda *args: self.upload_page.pause_tasks())
+        menu.append(pause_upload_item)
+
+        pause_download_item = Gtk.MenuItem.new_with_label(
+                _('Pause Downloading Tasks'))
+        pause_download_item.connect(
+                'activate', lambda *args: self.download_page.pause_tasks())
+        menu.append(pause_download_item)
+
+        sep_item = Gtk.SeparatorMenuItem()
+        menu.append(sep_item)
+
         quit_item = Gtk.MenuItem.new_with_label(_('Quit'))
         quit_item.connect('activate', self.on_status_icon_quit_activate)
         menu.append(quit_item)
@@ -347,6 +391,7 @@ class App:
     def on_status_icon_quit_activate(self, menuitem):
         self.quit()
 
+    # Open API
     def blink_page(self, page):
         def blink():
             row[COLOR_COL] = random.choice(self.color_schema)
@@ -365,3 +410,30 @@ class App:
     def get_default_color(self):
         context = self.window.get_style_context()
         return context.get_color(Gtk.StateFlags.NORMAL)
+
+    # Open API
+    def update_clipboard(self, text):
+        '''将文本复制到系统剪贴板里面'''
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        clipboard.set_text(text, -1)
+        self.toast(_('{0} copied to clipboard'.format(text)))
+
+    def init_notify(self):
+        self.notify = None
+        if self.profile['use-notify']:
+            status = Notify.init(Config.APPNAME)
+            if not status:
+                return
+            self.notify = Notify.Notification.new(
+                    Config.APPNAME, '', Config.NAME)
+
+    # Open API
+    def toast(self, text):
+        '''在用户界面显示一个消息通知.
+
+        可以使用系统提供的Notification工具, 也可以在窗口的最下方滚动弹出
+        这个消息
+        '''
+        if self.notify:
+            self.notify.update(Config.APPNAME, text, Config.NAME)
+            self.notify.show()

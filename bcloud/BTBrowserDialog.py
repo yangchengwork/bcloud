@@ -36,6 +36,7 @@ class BTBrowserDialog(Gtk.Dialog):
         self.source_url = source_url
         self.save_path = save_path
 
+        self.set_default_response(Gtk.ResponseType.OK)
         self.set_default_size(520, 480)
         self.set_border_width(10)
         box = self.get_content_area()
@@ -50,7 +51,7 @@ class BTBrowserDialog(Gtk.Dialog):
         box.pack_start(scrolled_win, True, True, 0)
 
         # check, name, size, humansize
-        self.liststore = Gtk.ListStore(bool, str, GObject.TYPE_LONG, str)
+        self.liststore = Gtk.ListStore(bool, str, GObject.TYPE_INT64, str)
         self.treeview = Gtk.TreeView(model=self.liststore)
         self.treeview.set_tooltip_column(NAME_COL)
         scrolled_win.add(self.treeview)
@@ -76,19 +77,22 @@ class BTBrowserDialog(Gtk.Dialog):
         '''在调用dialog.run()之前先调用这个函数来获取数据'''
         def on_tasks_received(info, error=None):
             if error or not info:
-                print('error occurred, or info is None:', info)
                 return
             if 'magnet_info' in info:
                 tasks = info['magnet_info']
             elif 'torrent_info' in info:
                 tasks = info['torrent_info']['file_info']
                 self.file_sha1 = info['torrent_info']['sha1']
+            elif 'error_code' in info:
+                self.app.toast(info.get('error_msg', ''))
+                return
             else:
-                print('tasks is null:', info)
+                print('unknown error:', info)
+                self.app.toast(_('Unknown error occured'))
                 return
             for task in tasks:
                 size = int(task['size'])
-                human_size, _ = util.get_human_size(size)
+                human_size = util.get_human_size(size)[0]
                 select = (size > MIN_SIZE_TO_CHECK or 
                         task['file_name'].endswith(CHECK_EXT))
                 self.liststore.append([

@@ -14,6 +14,11 @@ from bcloud import util
 from bcloud.Widgets import LeftLabel
 from bcloud.Widgets import SelectableLeftLabel
 
+(PIXBUF_COL, NAME_COL, PATH_COL, TOOLTIP_COL, SIZE_COL, HUMAN_SIZE_COL,
+    ISDIR_COL, MTIME_COL, HUMAN_MTIME_COL, TYPE_COL, PCS_FILE_COL
+    ) = list(range(11))
+
+
 class PropertiesDialog(Gtk.Dialog):
 
     def __init__(self, parent, app, pcs_file):
@@ -22,6 +27,8 @@ class PropertiesDialog(Gtk.Dialog):
                 file_name + _(' Properties'),
                 app.window, Gtk.DialogFlags.MODAL,
                 (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+        self.set_default_response(Gtk.ResponseType.CLOSE)
+
         self.set_border_width(15)
         #self.set_default_size(640, 480)
 
@@ -77,5 +84,52 @@ class PropertiesDialog(Gtk.Dialog):
         mtime_label2 = SelectableLeftLabel(
                 time.ctime(pcs_file['server_mtime']))
         grid.attach(mtime_label2, 1, 6, 1, 1)
+
+        box.show_all()
+
+
+class FolderPropertyDialog(Gtk.Dialog):
+
+    def __init__(self, icon_window, app, path):
+        file_path, file_name = os.path.split(path)
+        # modify file_name if path is '/'
+        if not file_name:
+            file_name = '/'
+        super().__init__(
+                file_name + _(' Properties'),
+                app.window, Gtk.DialogFlags.MODAL,
+                (Gtk.STOCK_CLOSE, Gtk.ResponseType.CLOSE))
+        self.set_border_width(15)
+
+        box = self.get_content_area()
+
+        grid = Gtk.Grid()
+        grid.props.row_spacing = 8
+        grid.props.margin_left = 15
+        grid.props.column_spacing = 15
+        box.pack_start(grid, True, True, 10)
+
+        name_label = LeftLabel(_('Name:'))
+        grid.attach(name_label, 0, 0, 1, 1)
+        name_label2 = SelectableLeftLabel(file_name)
+        grid.attach(name_label2, 1, 0, 1, 1)
+
+        location_label = LeftLabel(_('Location:'))
+        grid.attach(location_label, 0, 1, 1, 1)
+        location_label2 = SelectableLeftLabel(file_path)
+        grid.attach(location_label2, 1, 1, 1, 1)
+
+        file_count = 0
+        folder_count = 0
+        for row in icon_window.liststore:
+            if row[ISDIR_COL]:
+                folder_count = folder_count + 1
+            else:
+                file_count = file_count + 1
+        contents = _('{0} folders, {1} files').format(folder_count, file_count)
+        content_label = LeftLabel(_('Contents:'))
+        grid.attach(content_label, 0, 2, 1, 1)
+        content_label2 = SelectableLeftLabel(contents)
+        grid.attach(content_label2, 1, 2, 1, 1)
 
         box.show_all()
